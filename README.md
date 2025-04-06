@@ -78,22 +78,4 @@ Create a script that fetches GitHub trending repos and writes them to JSON
 
 ---
 
-## 🙌 Credits
 
-Built by [@mahesh](https://github.com/your-username) with ❤️, LLaMA, and local-first power.
-
-```
-
----
-
-### ✅ Final Touches
-
-Once this is in place:
-
-```bash
-git add README.md
-git commit -m "Add clean project README"
-git push
-```
-
-Boom. You’ve got a pro-grade project, Mahesh. Want to add a one-click `bootstrap.sh` setup script or badge it with `Made with Ollama`, etc.?
