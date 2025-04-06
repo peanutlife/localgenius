@@ -23,10 +23,13 @@ class Memory:
         try:
             self.collection = self.client.get_collection(name="agent-memory")
             print("Found existing collection 'agent-memory'")
-        except chromadb.errors.NotFoundError:
+        except ValueError as e:
             # Collection doesn't exist, create it
-            print("Creating new collection 'agent-memory'")
-            self.collection = self.client.create_collection(name="agent-memory")
+            if "does not exist" in str(e):
+                print("Creating new collection 'agent-memory'")
+                self.collection = self.client.create_collection(name="agent-memory")
+            else:
+                raise  # Re-raise if it's a different ValueError
 
         self.memory = []
 
@@ -56,10 +59,15 @@ class Memory:
         query_embedding_list = list(query_embedding)
 
         try:
+            # Check if collection is empty first
+            collection_data = self.collection.get()
+            if not collection_data['ids']:
+                return []
+
             # Query collection with embedding
             results = self.collection.query(
                 query_embeddings=[query_embedding_list],
-                n_results=min(top_k, len(self.collection.get()['ids']))
+                n_results=min(top_k, len(collection_data['ids']))
             )
             matches = results.get("documents", [[]])[0]
         except Exception as e:
