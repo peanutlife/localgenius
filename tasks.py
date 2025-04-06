@@ -7,6 +7,9 @@ import re
 class TaskPlanner:
     def __init__(self, llm):
         self.llm = llm
+        from tools import get_registry
+        self.tools = get_registry()
+        self.current_job_id = None
 
     def plan_task(self, task_desc, memory_context=None):
         context = "\n".join(memory_context or [])
@@ -72,11 +75,10 @@ Steps:
 
         return steps
 
-    def execute_step(self, step):
+    def execute_step(self, step, step_index=None):
         prompt = f"""
 You are a Python developer tasked with implementing code for the following step:
 "{step}"
-
 Write EXECUTABLE Python code to accomplish this task.
 - Include all necessary imports
 - Use requests and BeautifulSoup if web scraping is involved
@@ -84,10 +86,10 @@ Write EXECUTABLE Python code to accomplish this task.
 - Use functions appropriately
 - Include sample code that calls your functions
 - ONLY provide working Python code without any explanations
-
 CODE:
 ```python
 """
+
         code_response = self.llm.run(prompt)
 
         # Clean up code - extract from markdown blocks if present
@@ -100,24 +102,37 @@ CODE:
         else:
             code = code_response
 
+        # Additional cleaning to fix common syntax issues
+        # Remove lines that are comments with problematic content
+        code_lines = code.split('\n')
+        cleaned_lines = []
+        for line in code_lines:
+            line_stripped = line.strip()
+            # Skip problematic comment lines
+            if line_stripped.startswith('#') and any(word in line_stripped for word in ["Sample", "Usage", "Example"]):
+                continue
+            cleaned_lines.append(line)
+
+        code = '\n'.join(cleaned_lines)
+
         # Determine if we should write to file or execute directly
         if any(keyword in step.lower() for keyword in ["create", "write", "implement", "develop"]):
             # Generate a descriptive filename
             words = re.findall(r'\w+', step.lower())
             filename = '_'.join(words[:5])  # First 5 words for filename
             file_name = f"workspace/{filename}.py"
-            write_file(file_name, code)
 
-            # Execute the file after writing to see if it works
+            # Write and execute the code
+            self.tools.execute("write_file", file_name, code)
             try:
-                result = run_code(code)
+                result = self.tools.execute("run_code", code)
                 return f"Code written to {file_name} and executed with result:\n{result}"
             except Exception as e:
                 return f"Code written to {file_name} but execution failed: {str(e)}"
         else:
             # Just execute the code
             try:
-                result = run_code(code)
+                result = self.tools.execute("run_code", code)
                 return f"Code executed with result:\n{result}"
             except Exception as e:
                 return f"Code execution failed: {str(e)}"

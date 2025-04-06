@@ -9,6 +9,7 @@ from tasks import TaskPlanner
 from jobs.job_manager import JobManager, JobStatus, StepStatus
 import time
 from typing import Optional
+from tools import get_registry
 
 class AgentRunner:
     def __init__(self):
@@ -19,8 +20,11 @@ class AgentRunner:
         # Initialize components
         self.llm = LlamaRunner(model_name="llama3:8b")
         self.memory = Memory()
-        self.planner = TaskPlanner(self.llm)
         self.job_manager = JobManager()
+
+        # Initialize the tools registry and task planner
+        self.tools = get_registry()
+        self.planner = TaskPlanner(self.llm)
 
     def run_cli(self):
         """Run the agent in CLI mode."""
@@ -52,6 +56,9 @@ class AgentRunner:
         retry_parser = subparsers.add_parser("retry", help="Retry a specific step in a job")
         retry_parser.add_argument("job_id", help="ID of the job")
         retry_parser.add_argument("step_index", type=int, help="Index of the step to retry")
+
+        # List available tools command
+        tools_parser = subparsers.add_parser("tools", help="List all available tools")
 
         # Parse arguments
         args = parser.parse_args()
@@ -102,9 +109,13 @@ class AgentRunner:
             else:
                 print(f"Failed to retry step {args.step_index} of job {args.job_id}")
 
+        elif args.command == "tools":
+            self._print_available_tools()
+
     def interactive_mode(self):
         """Run the agent in interactive CLI mode."""
         print("\n🧠 LLaMA Dev Agent Ready. Type a task (e.g., 'create a Flask app'). Type 'exit' to quit.\n")
+        print("Special commands: list, show <job_id>, resume <job_id>, abort <job_id>, retry <job_id> <step_index>, tools")
 
         while True:
             user_input = input(">> ").strip()
@@ -113,6 +124,10 @@ class AgentRunner:
                 break
 
             # Handle special commands
+            if user_input.lower() == "tools":
+                self._print_available_tools()
+                continue
+
             if user_input.startswith("list"):
                 limit = 10
                 if len(user_input.split()) > 1:
@@ -228,7 +243,7 @@ class AgentRunner:
 
             try:
                 # Execute the step
-                result = self.planner.execute_step(step)
+                result = self.planner.execute_step(step, step_index)
 
                 # Log result to memory
                 self.memory.log_result(step, result)
@@ -270,6 +285,9 @@ class AgentRunner:
         # Set job status to running
         self.job_manager.update_job_status(job_id, JobStatus.RUNNING)
 
+        # Update the planner's current job ID
+        self.planner.current_job_id = job_id
+
         # Find the first incomplete step
         for step_index, step in enumerate(job['steps']):
             if step['status'] in [StepStatus.PENDING.value, StepStatus.RUNNING.value]:
@@ -292,7 +310,7 @@ class AgentRunner:
 
                     try:
                         # Execute the step
-                        result = self.planner.execute_step(current_step['description'])
+                        result = self.planner.execute_step(current_step['description'], i)
 
                         # Log result to memory
                         self.memory.log_result(current_step['description'], result)
@@ -334,6 +352,9 @@ class AgentRunner:
             print(f"Invalid step index {step_index}. Job has {len(job['steps'])} steps.")
             return False
 
+        # Update the planner's current job ID
+        self.planner.current_job_id = job_id
+
         # Get the step to retry
         step = job['steps'][step_index]
         print(f"🔁 Retrying step {step_index + 1}: {step['description']}")
@@ -343,7 +364,7 @@ class AgentRunner:
 
         try:
             # Execute the step
-            result = self.planner.execute_step(step['description'])
+            result = self.planner.execute_step(step['description'], step_index)
 
             # Log result to memory
             self.memory.log_result(step['description'], result)
@@ -423,6 +444,21 @@ class AgentRunner:
                 print(f"- {artifact['name']} ({artifact['type']}): {artifact['path']}")
 
         print("\n" + "=" * 80)
+
+    def _print_available_tools(self):
+        """Print all available tools and their descriptions."""
+        tool_list = self.tools.list_tools()
+
+        print("\n=== Available Tools ===")
+        print(f"{'Tool Name':<20} Description")
+        print("-" * 60)
+
+        for name, description in tool_list.items():
+            # Truncate description if too long
+            if len(description) > 60:
+                description = description[:57] + "..."
+            print(f"{name:<20} {description}")
+        print()
 
 # Run the agent if executed directly
 if __name__ == "__main__":
